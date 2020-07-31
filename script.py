@@ -103,6 +103,7 @@ class Model(nn.Module):
         B = quiz.shape[0]
         quiz = quiz.reshape(B, 81) # Dim B x 81
 
+
         placement_prob = self.placement_net(quiz.float())
         _ , placement_guess = torch.max(placement_prob, 1)
         placement = placement_guess.reshape(-1,1)
@@ -114,7 +115,7 @@ class Model(nn.Module):
         #number_prob = self.number_net( torch.cat((quiz , placement.int()), dim=1 ).float() )
         #number_values , number_guess = torch.max(number_prob, 1)
         
-        return placement_guess, number_guess  #  placement_values, placement_guess, placement_prob, number_values, number_guess
+        return placement_guess, number_prob  #  placement_values, placement_guess, placement_prob, number_values, number_guess
 
 model = Model()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
@@ -129,7 +130,11 @@ def loss_function(prediction, solution):
 
 def specific_loss_function(placement_guess, number_guess, solution):
     loss_func = nn.CrossEntropyLoss()
-
+    B = solution.shape[0]
+    solution = solution.reshape(-1)
+    solution = solution[torch.arange(0,B),placement_guess]
+    
+    solution[:,placement_guess]
     loss = loss_func(number_guess, solution)
     
     return loss
