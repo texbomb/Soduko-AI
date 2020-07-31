@@ -4,8 +4,8 @@ import pandas as pd
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim
-from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 
 #Sudokus to load
 load_number = 1000
@@ -60,7 +60,7 @@ class SudokuDataset(Dataset):
 dataset = SudokuDataset(dataset)
 
 ''' Config '''
-batch_size = 2
+batch_size = 5
 shuffle = True
 
 #Dataloader
@@ -76,17 +76,17 @@ class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
          
-        # self.placement_net = nn.Sequential(
-        #     nn.Linear( 81, 81),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear( 81, 81),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear( 81, 81),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear( 81, 9)
-        #     nn.Softmax(dim=1)
-        # )
-        
+        self.placement_net = nn.Sequential(
+            nn.Linear( 81, 81),
+            nn.ReLU(inplace=True),
+            nn.Linear( 81, 81),
+            nn.ReLU(inplace=True),
+            nn.Linear( 81, 81),
+            nn.ReLU(inplace=True),
+            nn.Linear( 81, 81),
+            #nn.Softmax(dim=1)
+        )
+
         self.number_net = nn.Sequential(
             nn.Linear( 82, 81),
             nn.ReLU(inplace=True),
@@ -103,23 +103,21 @@ class Model(nn.Module):
         B = quiz.shape[0]
         quiz = quiz.reshape(B, 81) # Dim B x 81
 
-        prediction = torch.zeros(B,81,9)
-
-        for i in range(81):
-            placement = torch.ones(B,1) * i
-            net_input = torch.cat( (quiz, placement.int()) , dim=1)
-            prediction[:,i,:] = self.number_net( net_input.float() )
-
+        placement_prob = self.placement_net(quiz.float())
+        _ , placement_guess = torch.max(placement_prob, 1)
+        placement = placement_guess.reshape(-1,1)
+        number_prob = self.number_net( torch.cat((quiz , placement.int()), dim=1 ).float() )
+        _ , number_guess = torch.max(number_prob, 1)
 
         #placement_values , placement_guess = torch.max(placement_prob, 1)
         #placement =  placement_values.reshape(-1,1)       
         #number_prob = self.number_net( torch.cat((quiz , placement.int()), dim=1 ).float() )
         #number_values , number_guess = torch.max(number_prob, 1)
         
-        return prediction  #  placement_values, placement_guess, placement_prob, number_values, number_guess
+        return placement_guess, number_guess  #  placement_values, placement_guess, placement_prob, number_values, number_guess
 
 model = Model()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
 
 
@@ -127,15 +125,23 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 def loss_function(prediction, solution):
     loss_func = nn.CrossEntropyLoss()
     loss = loss_func(prediction, solution)
+    return loss
+
+def specific_loss_function(placement_guess, number_guess, solution):
+    loss_func = nn.CrossEntropyLoss()
+
+    loss = loss_func(number_guess, solution)
     
     return loss
 
 for i in range(1000):
     optimizer.zero_grad()
     batch = train_iterator.next()
-    prediction  = model.forward(batch)
-    prediction = prediction.reshape(-1,9)
-    loss = loss_function(prediction, batch['solutions'].reshape(-1).long()-1)
+    placement_guess, number_guess  = model.forward(batch)
+    #prediction = prediction.reshape(-1,9)
+     
+    loss = specific_loss_function(placement_guess, number_guess , batch['solutions'].long()-1)
+    _ , prediction0 = torch.max(prediction, 1)
     loss.backward()
     optimizer.step()
     print(loss)
