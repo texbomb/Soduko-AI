@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
 #Sudokus to load
-load_number = 1000
+load_number = 100000
 
 
 quizzes = np.zeros((load_number+1, 81), np.int32)
@@ -67,7 +67,7 @@ shuffle = True
 train_loader = torch.utils.data.DataLoader(
         dataset,
         batch_size=  batch_size,
-        shuffle=  True,
+        shuffle= shuffle,
         drop_last=False)
 
 train_iterator = train_loader.__iter__()
@@ -87,28 +87,35 @@ class Model(nn.Module):
         #     nn.Softmax(dim=1)
         # )
         
-        self.number_net = nn.Sequential(
-            nn.Linear( 82, 81),
-            nn.ReLU(inplace=True),
+        self.grid_net = nn.Sequential(
             nn.Linear( 81, 81),
             nn.ReLU(inplace=True),
+            #nn.Dropout(p=0.4),
             nn.Linear( 81, 81),
             nn.ReLU(inplace=True),
-            nn.Linear( 81, 9),
-            #nn.Softmax(dim=1)
+            #nn.Dropout(p=0.4),
+            nn.Linear( 81, 81*9)
         )
 
+        # self.number_net = nn.ModuleList(
+        #     [nn.Linear(81, 9) for i in range(81)]
+        #     )
+
     def forward(self, batch):
-        quiz = batch['quizzes'] # Dim B x 9 x 9
+        quiz = batch['solutions'] # Dim B x 9 x 9
         B = quiz.shape[0]
         quiz = quiz.reshape(B, 81) # Dim B x 81
 
-        prediction = torch.zeros(B,81,9)
-
-        for i in range(81):
-            placement = torch.ones(B,1) * i
-            net_input = torch.cat( (quiz, placement.int()) , dim=1)
-            prediction[:,i,:] = self.number_net( net_input.float() )
+        #prediction = torch.zeros(B, 81, 9)
+        prediction = self.grid_net(quiz.float())
+        #for idx in range(len(self.number_net)):
+        #    prediction[:,idx, :] = self.number_net[idx](grid)
+        #self.number_net(grid)
+        # prediction = torch.zeros(B,81,9)
+        # for i in range(81):
+        #     placement = torch.ones(B,1) * i
+        #     net_input = torch.cat( (quiz, placement.int()) , dim=1)
+        #     prediction[:,i,:] = self.number_net( net_input.float() )
 
 
         #placement_values , placement_guess = torch.max(placement_prob, 1)
@@ -119,7 +126,7 @@ class Model(nn.Module):
         return prediction  #  placement_values, placement_guess, placement_prob, number_values, number_guess
 
 model = Model()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
 
 
@@ -130,13 +137,15 @@ def loss_function(prediction, solution):
     
     return loss
 
-for i in range(1000):
+for i in range(10000):
     optimizer.zero_grad()
+    train_iterator = train_loader.__iter__()
     batch = train_iterator.next()
     prediction  = model.forward(batch)
     prediction = prediction.reshape(-1,9)
     loss = loss_function(prediction, batch['solutions'].reshape(-1).long()-1)
     loss.backward()
     optimizer.step()
-    print(loss)
+    if i%100 == 0:
+        print(loss)
     #torch.save(model.state_dict, )
